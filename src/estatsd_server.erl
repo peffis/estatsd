@@ -275,7 +275,7 @@ do_report_gen_metrics(TsStr, State) ->
 
             StatsMsg = lists:map(fun({Key, Val}) ->
                 [
-                 Prefix, key2str(Key), " ",
+                 Prefix ++ ".", key2str(Key), " ",
                  io_lib:format("~w", [Val]), " ",
                  TsStr, "\n"
                 ]

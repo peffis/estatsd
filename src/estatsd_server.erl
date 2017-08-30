@@ -13,9 +13,9 @@
 
 -export([start_link/4]).
 
-%-export([key2str/1,flush/0]). %% export for debugging 
+%-export([key2str/1,flush/0]). %% export for debugging
 
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, 
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
 -record(state, {timers,             % gb_tree of timer data
@@ -23,24 +23,25 @@
                 flush_timer,        % TRef of interval timer
                 graphite_host,      % graphite server host
                 graphite_port,      % graphite server port
-                vm_metrics            % flag to enable sending VM metrics on flush
+                vm_metrics,         % flag to enable sending VM metrics on flush
+                generator = undefined % a tuple {Prefix, Fun} that can generate stats defined by Fun
                }).
 
 start_link(FlushIntervalMs, GraphiteHost, GraphitePort, VmMetrics) ->
-    gen_server:start_link({local, ?MODULE}, 
-                          ?MODULE, 
-                          [FlushIntervalMs, GraphiteHost, GraphitePort, VmMetrics], 
+    gen_server:start_link({local, ?MODULE},
+                          ?MODULE,
+                          [FlushIntervalMs, GraphiteHost, GraphitePort, VmMetrics],
                           []).
 
 %%
 
 init([FlushIntervalMs, GraphiteHost, GraphitePort, VmMetrics]) ->
-    error_logger:info_msg("estatsd will flush stats to ~p:~w every ~wms\n", 
+    error_logger:info_msg("estatsd will flush stats to ~p:~w every ~wms\n",
                           [ GraphiteHost, GraphitePort, FlushIntervalMs ]),
     ets:new(statsd, [named_table, set]),
     ets:new(statsdgauge, [named_table, set]),
     %% Flush out stats to graphite periodically
-    {ok, Tref} = timer:apply_interval(FlushIntervalMs, gen_server, cast, 
+    {ok, Tref} = timer:apply_interval(FlushIntervalMs, gen_server, cast,
                                                        [?MODULE, flush]),
     State = #state{ timers          = gb_trees:empty(),
                     flush_interval  = FlushIntervalMs,
@@ -88,7 +89,11 @@ handle_cast(flush, State) ->
     ets:delete_all_objects(statsd),
     ets:delete_all_objects(statsdgauge),
     NewState = State#state{timers = gb_trees:empty()},
-    {noreply, NewState}.
+    {noreply, NewState};
+
+handle_cast({set_generator, Prefix, Fun}, State) ->
+    {noreply, State#state{generator = {Prefix, Fun}}}.
+
 
 handle_call(_,_,State)      -> {reply, ok, State}.
 
@@ -115,9 +120,9 @@ send_to_graphite(Msg, State) ->
     end.
 
 % this string munging is damn ugly compared to javascript :(
-key2str(K) when is_atom(K) -> 
+key2str(K) when is_atom(K) ->
     atom_to_list(K);
-key2str(K) when is_binary(K) -> 
+key2str(K) when is_binary(K) ->
     key2str(binary_to_list(K));
 key2str(K) when is_list(K) ->
     {ok, R1} = re:compile("\\s+"),
@@ -141,14 +146,17 @@ do_report(All, Gauges, State) ->
     {MsgTimers,   NumTimers}           = do_report_timers(TsStr, State),
     {MsgGauges,   NumGauges}           = do_report_gauges(Gauges),
     {MsgVmMetrics,   NumVmMetrics}  = do_report_vm_metrics(TsStr, State),
+    {MsgGenMetrics,  NumGenMetrics} = do_report_gen_metrics(TsStr, State),
+
     %% REPORT TO GRAPHITE
-    case NumTimers + NumCounters + NumGauges + NumVmMetrics of
+    case NumTimers + NumCounters + NumGauges + NumVmMetrics + NumGenMetrics of
         0 -> nothing_to_report;
         NumStats ->
             FinalMsg = [ MsgCounters,
                          MsgTimers,
                          MsgGauges,
                          MsgVmMetrics,
+                         MsgGenMetrics,
                          %% Also graph the number of graphs we're graphing:
                          "stats.num_stats ", num2str(NumStats), " ", TsStr, "\n"
                        ],
@@ -161,15 +169,15 @@ do_report_counters(All, TsStr, State) ->
                         KeyS = key2str(Key),
                         Val = Val0 / (State#state.flush_interval/1000),
                         %% Build stats string for graphite
-                        Fragment = [ "stats.counters.", KeyS, " ", 
-                                     io_lib:format("~w", [Val]), " ", 
+                        Fragment = [ "stats.counters.", KeyS, " ",
+                                     io_lib:format("~w", [Val]), " ",
                                      TsStr, "\n",
 
-                                     "stats.counters.counts.", KeyS, " ", 
-                                     io_lib:format("~w",[NumVals]), " ", 
+                                     "stats.counters.counts.", KeyS, " ",
+                                     io_lib:format("~w",[NumVals]), " ",
                                      TsStr, "\n"
                                    ],
-                        [ Fragment | Acc ]                    
+                        [ Fragment | Acc ]
                 end, [], All),
     {Msg, length(All)}.
 
@@ -259,6 +267,26 @@ do_report_vm_metrics(TsStr, State) ->
             Msg = []
     end,
     {Msg, length(Msg)}.
+
+do_report_gen_metrics(TsStr, State) ->
+    case State#state.generator of
+        {Prefix, Fun} ->
+            StatsData = Fun(),
+
+            StatsMsg = lists:map(fun({Key, Val}) ->
+                [
+                 Prefix, key2str(Key), " ",
+                 io_lib:format("~w", [Val]), " ",
+                 TsStr, "\n"
+                ]
+            end, StatsData),
+            Msg = StatsMsg;
+
+        _ ->
+            Msg = []
+    end,
+    {Msg, length(Msg)}.
+
 
 node_key() ->
     NodeList = atom_to_list(node()),

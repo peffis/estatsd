@@ -4,7 +4,7 @@
          gauge/2,
          increment/1, increment/2, increment/3,
          decrement/1, decrement/2, decrement/3,
-         timing/2
+         timing/2, set_generator/2
         ]).
 
 -define(SERVER, estatsd_server).
@@ -15,10 +15,10 @@ timing(Key, StartTime = {_,_,_}) ->
     timing(Key,Dur);
 
 % Log timing information, ms
-timing(Key, Duration) when is_integer(Duration) -> 
+timing(Key, Duration) when is_integer(Duration) ->
     gen_server:cast(?SERVER, {timing, Key, Duration});
 
-timing(Key, Duration) -> 
+timing(Key, Duration) ->
     gen_server:cast(?SERVER, {timing, Key, erlang:round(Duration)}).
 
 
@@ -38,3 +38,7 @@ decrement(Key, Amount, Sample) ->
 % Sets a gauge value
 gauge(Key, Value) when is_number(Value) ->
     gen_server:cast(?SERVER, {gauge, Key, Value}).
+
+% Sets a generic stats generator
+set_generator(Prefix, Fun) ->
+    gen_server:cast(?SERVER, {set_generator, Prefix, Fun}).

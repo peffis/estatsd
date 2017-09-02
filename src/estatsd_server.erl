@@ -269,22 +269,19 @@ do_report_vm_metrics(TsStr, State) ->
     {Msg, length(Msg)}.
 
 do_report_gen_metrics(TsStr, State) ->
-    case State#state.generator of
-        {Prefix, Fun} ->
-            StatsData = Fun(),
+    Msg = case State#state.generator of
+              {Prefix, Fun} ->
 
-            StatsMsg = lists:map(fun({Key, Val}) ->
-                [
-                 Prefix ++ ".", key2str(Key), " ",
-                 io_lib:format("~w", [Val]), " ",
-                 TsStr, "\n"
-                ]
-            end, StatsData),
-            Msg = StatsMsg;
-
-        _ ->
-            Msg = []
-    end,
+                  lists:map(fun({Key, Val}) ->
+                                    [
+                                     Prefix ++ ".", key2str(Key), " ",
+                                     io_lib:format("~w", [Val]), " ",
+                                     TsStr, "\n"
+                                    ]
+                            end, Fun());
+              _ ->
+                  []
+          end,
     {Msg, length(Msg)}.
 
 

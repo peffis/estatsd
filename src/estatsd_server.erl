@@ -173,6 +173,10 @@ do_report_counters(All, TsStr, State) ->
                                      io_lib:format("~w", [Val]), " ",
                                      TsStr, "\n",
 
+                                     "stats.counters_unnormalized.", KeyS, " ",
+                                     io_lib:format("~w", [Val0]), " ",
+                                     TsStr, "\n",
+
                                      "stats.counters.counts.", KeyS, " ",
                                      io_lib:format("~w",[NumVals]), " ",
                                      TsStr, "\n"

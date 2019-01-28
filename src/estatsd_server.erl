@@ -136,7 +136,7 @@ key2str(K) when is_list(K) ->
 
 num2str(NN) -> lists:flatten(io_lib:format("~w",[NN])).
 
-unixtime()  -> {Meg,S,_Mic} = erlang:now(), Meg*1000000 + S.
+unixtime()  -> erlang:system_time(millisecond).
 
 %% Aggregate the stats and generate a report to send to graphite
 do_report(All, Gauges, State) ->
